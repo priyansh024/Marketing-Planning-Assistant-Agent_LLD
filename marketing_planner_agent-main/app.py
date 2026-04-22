@@ -1,159 +1,79 @@
 import streamlit as st
-from marketing_planner_agent.agent import MarketingAgent
+import datetime
+from vector_store import create_vector_store
+from prompt_engine import build_advanced_prompt
+from generator import generate_content
 
-#  Page configuration
-st.set_page_config(
-    page_title="Marketing Planner Agent",
-    page_icon="📈",
-    layout="wide"
-)
+st.set_page_config(page_title="GenAI Marketing Tool", page_icon="🚀", layout="wide")
 
-# --- NEW: Initialize session state for history ---
-if "history" not in st.session_state:
-    st.session_state.history = []
-if "show_history" not in st.session_state:
-    st.session_state.show_history = False
-
-
+# FIXED CSS (text color added)
 st.markdown("""
 <style>
-.main {
-    background-color: #0E1117;
-}
-
-/* Input box */
-.stTextArea textarea {
-    background-color: #1c1f26;
-    color: white;
-    border-radius: 10px;
-    padding: 12px;
-}
-
-/* Button styling */
-.stButton>button {
-    background: linear-gradient(90deg, #00C9A7, #00B4D8);
-    color: white;
-    font-weight: bold;
-    border-radius: 10px;
-    height: 3em;
-    width: 100%;
-    border: none;
-}
-
-.stButton>button:hover {
-    background: linear-gradient(90deg, #00B4D8, #00C9A7);
+.big-title {font-size:40px; font-weight:bold; color:#4CAF50;}
+.card {
+    background-color:#ffffff;
+    color:#000000;
+    padding:20px;
+    border-radius:10px;
+    margin-top:10px;
 }
 </style>
 """, unsafe_allow_html=True)
 
-#  Sidebar
-st.sidebar.title("🚀 Planner Agent")
-st.sidebar.write("AI-powered marketing planning tool")
-st.sidebar.write("---")
-st.sidebar.write("Built with Streamlit")
+st.markdown('<div class="big-title">🚀 Marketing Content Generator</div>', unsafe_allow_html=True)
 
-# --- NEW: History UI in Sidebar ---
-st.sidebar.write("### 📜 Session History")
+col1, col2 = st.columns(2)
 
-col_h1, col_h2 = st.sidebar.columns(2)
-with col_h1:
-    if st.button("History"):
-        st.session_state.show_history = not st.session_state.show_history
-with col_h2:
-    if st.button("Clear History"):
-        st.session_state.history = []
-        st.session_state.show_history = False
-        st.rerun()
-
-if st.session_state.show_history:
-    if not st.session_state.history:
-        st.sidebar.info("No plans generated yet.")
-    else:
-        # Show history in reverse order (newest first)
-        for idx, (past_goal, past_plan) in enumerate(reversed(st.session_state.history)):
-            with st.sidebar.expander(f"Goal: {past_goal[:25]}..."):
-                st.write(past_plan[:150] + "...")
-                # Download button for historical reports
-                st.download_button(
-                    label="📥 Download this report",
-                    data=past_plan,
-                    file_name=f"marketing_report_past_{idx}.txt",
-                    mime="text/plain",
-                    key=f"dl_hist_{idx}"
-                )
-st.sidebar.write("---")
-
-#  Initialize agent
-agent = MarketingAgent()
-
-#  Header
-st.markdown("<h1 style='text-align: center;'>📈 Marketing Planner Agent</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #9aa0a6;'>Generate AI-powered marketing strategies in seconds</p>", unsafe_allow_html=True)
-
-st.write("")
-
-#  Centered layout
-col1, col2, col3 = st.columns([1,2,1])
+with col1:
+    product = st.text_input("📦 Product Name")
+    audience = st.text_input("🎯 Target Audience")
 
 with col2:
-    goal = st.text_area(
-        "Enter Marketing Goal",
-        placeholder="Example: Create a marketing strategy for an online clothing store...",
-        height=140
-    )
+    tone = st.selectbox("🎨 Tone", ["Professional", "Casual", "Motivational", "Friendly", "Premium"])
+    format_type = st.selectbox("📝 Content Type", ["Ad Copy", "Instagram Post", "Email Marketing"])
 
-    generate = st.button("Generate Plan")
+# History storage
+if "history" not in st.session_state:
+    st.session_state.history = []
 
-#  Generate output
-if generate:
-    if goal.strip():
+# Toggle history button
+show_history = st.toggle("📜 Show History")
 
-        with st.spinner("Creating your marketing strategy..."):
-            raw_result = agent.run(goal)
-
-        #  Extract actual text if returned as dict
-        if isinstance(raw_result, dict) and "output" in raw_result:
-            result = raw_result["output"]
-        else:
-            result = str(raw_result)
-
-        #  Clean formatting artifacts
-        result = result.replace("\\n", "\n")   # fix newline escapes
-        result = result.replace("**", "")      # remove markdown bold
-        result = result.replace("##", "")      # remove headings
-        result = result.replace("|", "")       # remove table pipes
-        result = result.replace("  ", " ")     # remove extra spaces
-        result = result.replace("<br>", "\n")   #  remove HTML breaks
-        result = result.replace("<br/>", "\n")
-
-        # --- NEW: Save the successfully generated goal and result to history ---
-        st.session_state.history.append((goal, result))
-
-        st.success(" Plan Generated Successfully")
-
-        # --- NEW: Download Button for the newly generated report ---
-        st.download_button(
-            label="📥 Download Marketing Report",
-            data=result,
-            file_name="marketing_strategy_report.txt",
-            mime="text/plain"
-        )
-
-        st.markdown("### 📊 Strategy Output")
-
-       
-        st.markdown("""
-        <div style="background-color:#1c1f26;
-                    padding:25px;
-                    border-radius:12px;
-                    border:1px solid #2a2f3a;
-                    line-height:1.7;
-                    font-size:18px;">
-        """, unsafe_allow_html=True)
-
-        st.write(result)
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
+# Generate
+if st.button("✨ Generate Content"):
+    if not product or not audience:
+        st.warning("⚠️ Please fill all fields")
     else:
-        st.warning("⚠ Please enter a marketing goal")
+        with st.spinner("Generating..."):
+            vector_db = create_vector_store()
+
+            query = f"{product} {audience} {tone}"
+            docs = vector_db.similarity_search(query, k=2)
+
+            context = "\n".join([doc.page_content for doc in docs])
+
+            prompt = build_advanced_prompt(product, audience, tone, context, format_type)
+
+            result = generate_content(prompt)
+
+            st.session_state.history.append({
+                "time": datetime.datetime.now().strftime("%H:%M:%S"),
+                "product": product,
+                "output": result
+            })
+
+            st.markdown("### 📢 Generated Content")
+            st.markdown(f'<div class="card">{result}</div>', unsafe_allow_html=True)
+
+# Show history ONLY if toggle ON
+if show_history and st.session_state.history:
+    st.markdown("### 🕘 Previous Outputs")
+
+    for item in reversed(st.session_state.history):
+        st.markdown(f"""
+        <div class="card">
+        <b>⏰ {item['time']}</b><br>
+        <b>📦 {item['product']}</b><br><br>
+        {item['output']}
+        </div>
+        """, unsafe_allow_html=True)
